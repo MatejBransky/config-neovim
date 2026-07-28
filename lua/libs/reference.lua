@@ -24,11 +24,14 @@ local function get_diffview_file()
   return nil
 end
 
--- Get git root by finding .git directory, walking upward from the file path
+-- Get git root by finding .git directory/file, walking upward from the file path.
+-- Handles both regular repos (.git as directory) and worktrees (.git as file).
 local function find_git_root(file_path)
   local dir = vim.fs.dirname(file_path)
   while dir and dir ~= "/" do
-    if vim.fn.isdirectory(dir .. "/.git") == 1 then
+    local git_path = dir .. "/.git"
+    -- Check if .git exists (either as directory or file)
+    if vim.fn.isdirectory(git_path) == 1 or vim.fn.filereadable(git_path) == 1 then
       return dir
     end
     dir = vim.fs.dirname(dir)
