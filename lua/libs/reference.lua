@@ -26,16 +26,45 @@ end
 
 -- Get git root using git command (handles bare repos, worktrees, etc.)
 local function find_git_root(file_path)
-  local dir = vim.fs.dirname(file_path)
-
-  -- Try using git rev-parse --show-toplevel, which correctly handles all git setups
-  local handle = io.popen("cd " .. vim.fn.shellescape(dir) .. " && git rev-parse --show-toplevel 2>/dev/null")
-  if handle then
-    local result = handle:read("*a"):match("^(.-)[\r\n]*$")
-    handle:close()
-    if result and result ~= "" then
-      return result
+  -- If file_path is from diffview and contains .bare/worktrees/, extract worktree name and find real worktree
+  local worktree_name = file_path:match("%.bare/worktrees/([^/]+)")
+  if worktree_name then
+    -- Find the real worktree by checking parent directories for .git that references this worktree
+    local parent = vim.fs.dirname(vim.fs.dirname(file_path))
+    while parent and parent ~= "/" do
+      local git_file = parent .. "/.git"
+      if vim.fn.filereadable(git_file) == 1 then
+        local f = io.open(git_file, "r")
+        if f then
+          local content = f:read("*a")
+          f:close()
+          -- Check if this .git file references our bare worktree
+          if content:find("%.bare/worktrees/" .. worktree_name) then
+            return parent
+          end
+        end
+      end
+      parent = vim.fs.dirname(parent)
     end
+  end
+
+  -- Standard case: try git rev-parse --show-toplevel from the actual filesystem path
+  -- For diffview paths that don't exist, we try the parent directory
+  local dir = vim.fs.dirname(file_path)
+  while dir and dir ~= "/" and dir ~= "" do
+    if vim.fn.isdirectory(dir) == 1 then
+      local cmd = "cd " .. vim.fn.shellescape(dir) .. " && git rev-parse --show-toplevel 2>/dev/null"
+      local handle = io.popen(cmd)
+      if handle then
+        local result = handle:read("*a"):match("^(.-)[\r\n]*$")
+        handle:close()
+        if result and result ~= "" then
+          return result
+        end
+      end
+      break
+    end
+    dir = vim.fs.dirname(dir)
   end
 
   return nil
