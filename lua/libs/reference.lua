@@ -41,13 +41,28 @@ function M.relative_path()
   -- Try to make relative to git root first
   if vim.fn.exists("*FugitiveWorkTree") == 1 then
     local git_root = vim.fn.FugitiveWorkTree()
-    if git_root ~= "" then
-      return require("plenary.path"):new(file_path):make_relative(git_root)
+    if git_root ~= "" and git_root ~= "/" then
+      -- Ensure git_root ends with / for string matching
+      if not git_root:match("/$") then
+        git_root = git_root .. "/"
+      end
+      -- Manually compute relative path if file_path starts with git_root
+      if file_path:sub(1, #git_root) == git_root then
+        return file_path:sub(#git_root + 1)
+      end
     end
   end
 
   -- Fallback: make relative to cwd
-  return require("plenary.path"):new(file_path):make_relative(vim.fn.getcwd())
+  local cwd = vim.fn.getcwd()
+  if not cwd:match("/$") then
+    cwd = cwd .. "/"
+  end
+  if file_path:sub(1, #cwd) == cwd then
+    return file_path:sub(#cwd + 1)
+  end
+
+  return file_path
 end
 
 -- Format a reference for the current file and a line/range.
