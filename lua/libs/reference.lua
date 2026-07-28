@@ -24,10 +24,21 @@ local function get_diffview_file()
   return nil
 end
 
--- Get git root by finding .git directory/file, walking upward from the file path.
--- Handles both regular repos (.git as directory) and worktrees (.git as file).
+-- Get git root using git command (handles bare repos, worktrees, etc.)
 local function find_git_root(file_path)
   local dir = vim.fs.dirname(file_path)
+
+  -- Try using git rev-parse --show-toplevel, which correctly handles all git setups
+  local handle = io.popen("cd " .. vim.fn.shellescape(dir) .. " && git rev-parse --show-toplevel 2>/dev/null")
+  if handle then
+    local result = handle:read("*a"):match("^(.-)[\r\n]*$")
+    handle:close()
+    if result and result ~= "" then
+      return result
+    end
+  end
+
+  -- Fallback: manual search (for when git is not available)
   while dir and dir ~= "/" do
     local git_path = dir .. "/.git"
 
