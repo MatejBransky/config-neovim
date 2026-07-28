@@ -24,32 +24,31 @@ local function get_diffview_file()
   return nil
 end
 
+-- Map bare worktree paths to real worktree directories
+-- Input:  /path/to/monorepo/.bare/worktrees/feature-name/hash/backend/services/...
+-- Output: /path/to/monorepo/feature-name
+local function map_bare_worktree_to_real(file_path)
+  local bare_match, worktree_name = file_path:match("^(.*/%.bare)/worktrees/([^/]+)")
+  if bare_match and worktree_name then
+    local monorepo_root = vim.fs.dirname(bare_match)
+    local real_worktree = monorepo_root .. "/" .. worktree_name
+    -- Verify the worktree exists
+    if vim.fn.isdirectory(real_worktree) == 1 then
+      return real_worktree
+    end
+  end
+  return nil
+end
+
 -- Get git root using git command (handles bare repos, worktrees, etc.)
 local function find_git_root(file_path)
-  -- If file_path is from diffview and contains .bare/worktrees/, extract worktree name and find real worktree
-  local worktree_name = file_path:match("%.bare/worktrees/([^/]+)")
-  if worktree_name then
-    -- Find the real worktree by checking parent directories for .git that references this worktree
-    local parent = vim.fs.dirname(vim.fs.dirname(file_path))
-    while parent and parent ~= "/" do
-      local git_file = parent .. "/.git"
-      if vim.fn.filereadable(git_file) == 1 then
-        local f = io.open(git_file, "r")
-        if f then
-          local content = f:read("*a")
-          f:close()
-          -- Check if this .git file references our bare worktree
-          if content:find("%.bare/worktrees/" .. worktree_name) then
-            return parent
-          end
-        end
-      end
-      parent = vim.fs.dirname(parent)
-    end
+  -- First, check if this is a bare worktree path and map it to the real worktree
+  local real_worktree = map_bare_worktree_to_real(file_path)
+  if real_worktree then
+    return real_worktree
   end
 
   -- Standard case: try git rev-parse --show-toplevel from the actual filesystem path
-  -- For diffview paths that don't exist, we try the parent directory
   local dir = vim.fs.dirname(file_path)
   while dir and dir ~= "/" and dir ~= "" do
     if vim.fn.isdirectory(dir) == 1 then
