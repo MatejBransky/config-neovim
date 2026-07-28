@@ -24,28 +24,51 @@ local function get_diffview_file()
   return nil
 end
 
--- Map bare worktree paths to real worktree directories
--- Input:  /path/to/monorepo/.bare/worktrees/feature-name/hash/backend/services/...
--- Output: /path/to/monorepo/feature-name
-local function map_bare_worktree_to_real(file_path)
-  local bare_match, worktree_name = file_path:match("^(.*/%.bare)/worktrees/([^/]+)")
-  if bare_match and worktree_name then
-    local monorepo_root = vim.fs.dirname(bare_match)
-    local real_worktree = monorepo_root .. "/" .. worktree_name
-    -- Verify the worktree exists
-    if vim.fn.isdirectory(real_worktree) == 1 then
-      return real_worktree
-    end
+-- Extract relative file path from bare worktree URI
+-- Input:  /path/to/monorepo/.bare/worktrees/feature-name/hash/backend/services/file.ts
+-- Output: backend/services/file.ts (and real_worktree root)
+local function extract_bare_worktree_path(file_path)
+  -- Check if this is a bare worktree path
+  if not file_path:find("/.bare/worktrees/") then
+    return nil, nil
   end
-  return nil
+
+  -- Extract monorepo root (everything before /.bare)
+  local monorepo_root = file_path:match("^(.*/)")  -- start directory
+  monorepo_root = monorepo_root:match("^(.*)/.bare/worktrees/")  -- up to /.bare/worktrees/
+
+  -- Extract worktree name (first dir after /worktrees/)
+  local worktree_name = file_path:match("/.bare/worktrees/([^/]+)")
+
+  if not monorepo_root or not worktree_name then
+    return nil, nil
+  end
+
+  local real_worktree = monorepo_root .. "/" .. worktree_name
+
+  -- Verify the worktree exists
+  if vim.fn.isdirectory(real_worktree) ~= 1 then
+    return nil, nil
+  end
+
+  -- Extract the relative file path: everything after worktree_name/hash/
+  -- Pattern: /.bare/worktrees/feature-name/HASH/backend/services/...
+  -- We want: backend/services/...
+  local _, _, relative_path = file_path:find("/.bare/worktrees/[^/]+/[^/]+/(.+)$")
+  if not relative_path then
+    return nil, nil
+  end
+
+  return real_worktree, relative_path
 end
 
 -- Get git root using git command (handles bare repos, worktrees, etc.)
+-- Returns: (git_root, optional_relative_path_for_bare_worktrees)
 local function find_git_root(file_path)
-  -- First, check if this is a bare worktree path and map it to the real worktree
-  local real_worktree = map_bare_worktree_to_real(file_path)
+  -- First, check if this is a bare worktree path and extract the real worktree root + relative path
+  local real_worktree, relative_path = extract_bare_worktree_path(file_path)
   if real_worktree then
-    return real_worktree
+    return real_worktree, relative_path
   end
 
   -- Standard case: try git rev-parse --show-toplevel from the actual filesystem path
@@ -58,7 +81,7 @@ local function find_git_root(file_path)
         local result = handle:read("*a"):match("^(.-)[\r\n]*$")
         handle:close()
         if result and result ~= "" then
-          return result
+          return result, nil
         end
       end
       break
@@ -66,7 +89,7 @@ local function find_git_root(file_path)
     dir = vim.fs.dirname(dir)
   end
 
-  return nil
+  return nil, nil
 end
 
 -- Compute relative path by stripping the base path prefix
@@ -102,8 +125,13 @@ function M.relative_path()
     file_path = vim.fn.expand("%:p")
   end
 
-  -- Try to find git root by walking up from the file
-  local git_root = find_git_root(file_path)
+  -- Try to find git root (may also return a pre-computed relative path for bare worktrees)
+  local git_root, pre_computed_relative = find_git_root(file_path)
+  if pre_computed_relative then
+    -- For bare worktree paths, we already have the relative path
+    return pre_computed_relative
+  end
+
   if git_root then
     return make_relative(file_path, git_root)
   end
