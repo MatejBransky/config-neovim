@@ -24,9 +24,40 @@ local function get_diffview_file()
   return nil
 end
 
+-- Get git root by finding .git directory, walking upward from the file path
+local function find_git_root(file_path)
+  local dir = vim.fs.dirname(file_path)
+  while dir and dir ~= "/" do
+    if vim.fn.isdirectory(dir .. "/.git") == 1 then
+      return dir
+    end
+    dir = vim.fs.dirname(dir)
+  end
+  return nil
+end
+
+-- Compute relative path by stripping the base path prefix
+local function make_relative(file_path, base_path)
+  if not base_path or base_path == "/" then
+    return file_path
+  end
+
+  -- Ensure base_path ends with /
+  if not base_path:match("/$") then
+    base_path = base_path .. "/"
+  end
+
+  -- Check if file_path starts with base_path
+  if file_path:sub(1, #base_path) == base_path then
+    return file_path:sub(#base_path + 1)
+  end
+
+  return file_path
+end
+
 -- Relative path of the current file, preferring the git work tree root
--- (via fugitive) and falling back to the path relative to cwd when outside
--- a repo or before fugitive has loaded. Handles diffview buffers specially.
+-- and falling back to the path relative to cwd when outside a repo.
+-- Handles diffview buffers specially.
 function M.relative_path()
   local file_path
 
@@ -38,31 +69,14 @@ function M.relative_path()
     file_path = vim.fn.expand("%:p")
   end
 
-  -- Try to make relative to git root first
-  if vim.fn.exists("*FugitiveWorkTree") == 1 then
-    local git_root = vim.fn.FugitiveWorkTree()
-    if git_root ~= "" and git_root ~= "/" then
-      -- Ensure git_root ends with / for string matching
-      if not git_root:match("/$") then
-        git_root = git_root .. "/"
-      end
-      -- Manually compute relative path if file_path starts with git_root
-      if file_path:sub(1, #git_root) == git_root then
-        return file_path:sub(#git_root + 1)
-      end
-    end
+  -- Try to find git root by walking up from the file
+  local git_root = find_git_root(file_path)
+  if git_root then
+    return make_relative(file_path, git_root)
   end
 
   -- Fallback: make relative to cwd
-  local cwd = vim.fn.getcwd()
-  if not cwd:match("/$") then
-    cwd = cwd .. "/"
-  end
-  if file_path:sub(1, #cwd) == cwd then
-    return file_path:sub(#cwd + 1)
-  end
-
-  return file_path
+  return make_relative(file_path, vim.fn.getcwd())
 end
 
 -- Format a reference for the current file and a line/range.
