@@ -38,39 +38,6 @@ local function find_git_root(file_path)
     end
   end
 
-  -- Fallback: manual search (for when git is not available)
-  while dir and dir ~= "/" do
-    local git_path = dir .. "/.git"
-
-    -- If .git is a directory, we found the root
-    if vim.fn.isdirectory(git_path) == 1 then
-      return dir
-    end
-
-    -- If .git is a file (worktree), parse the gitdir reference
-    if vim.fn.filereadable(git_path) == 1 then
-      local file = io.open(git_path, "r")
-      if file then
-        local content = file:read("*a")
-        file:close()
-        -- Parse "gitdir: /path/to/.git" format
-        local gitdir = content:match("gitdir:%s*(.+)")
-        if gitdir then
-          gitdir = vim.trim(gitdir)
-          -- If gitdir is relative, make it absolute relative to current dir
-          if not gitdir:match("^/") then
-            gitdir = dir .. "/" .. gitdir
-          end
-          -- Return the parent of the .git directory (the worktree root)
-          return vim.fs.dirname(gitdir)
-        end
-      end
-      -- Fallback: if we can't parse, treat this dir as the root
-      return dir
-    end
-
-    dir = vim.fs.dirname(dir)
-  end
   return nil
 end
 
