@@ -1,17 +1,53 @@
 -- Shared helpers for building references to the current file/line(s).
 local M = {}
 
+-- Extract the real file path from a diffview buffer URI.
+-- diffview:///path/to/file turns into /path/to/file
+local function extract_diffview_path(uri)
+  local path = uri:match("^diffview://(.*)$")
+  if path then
+    return path
+  end
+  return nil
+end
+
+-- Detect if the current buffer is a diffview buffer and extract the real file path.
+-- Diffview buffers show file paths after the last "/" in the buffer name.
+local function get_diffview_file()
+  local bufname = vim.fn.bufname("%")
+  if bufname:find("diffview://", 1, true) then
+    local real_path = extract_diffview_path(bufname)
+    if real_path then
+      return real_path
+    end
+  end
+  return nil
+end
+
 -- Relative path of the current file, preferring the git work tree root
 -- (via fugitive) and falling back to the path relative to cwd when outside
--- a repo or before fugitive has loaded.
+-- a repo or before fugitive has loaded. Handles diffview buffers specially.
 function M.relative_path()
+  local file_path
+
+  -- Handle diffview buffers: extract the real file path from the URI
+  local diffview_path = get_diffview_file()
+  if diffview_path then
+    file_path = diffview_path
+  else
+    file_path = vim.fn.expand("%:p")
+  end
+
+  -- Try to make relative to git root first
   if vim.fn.exists("*FugitiveWorkTree") == 1 then
     local git_root = vim.fn.FugitiveWorkTree()
     if git_root ~= "" then
-      return require("plenary.path"):new(vim.fn.expand("%:p")):make_relative(git_root)
+      return require("plenary.path"):new(file_path):make_relative(git_root)
     end
   end
-  return vim.fn.expand("%:.")
+
+  -- Fallback: make relative to cwd
+  return require("plenary.path"):new(file_path):make_relative(vim.fn.getcwd())
 end
 
 -- Format a reference for the current file and a line/range.
