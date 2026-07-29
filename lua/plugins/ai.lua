@@ -12,6 +12,9 @@ return {
     },
     event = "BufReadPost",
     opts = {
+      filetypes = {
+        markdown = true, -- overrides default
+      },
       panel = {
         auto_refresh = true,
       },
@@ -26,6 +29,24 @@ return {
           dismiss = keybindings.ai.dismiss.shortcut,
         },
       },
+      should_attach = function(buf_id, _)
+        local logger = require("copilot.logger")
+        if vim.b[buf_id].copilot_enabled then
+          return true
+        end
+
+        if not vim.bo[buf_id].buflisted then
+          logger.debug("not attaching, buffer is not 'buflisted'")
+          return false
+        end
+
+        if vim.bo[buf_id].buftype ~= "" then
+          logger.debug("not attaching, buffer 'buftype' is " .. vim.bo[buf_id].buftype)
+          return false
+        end
+
+        return true
+      end,
     },
   },
 

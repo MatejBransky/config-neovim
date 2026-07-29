@@ -213,6 +213,9 @@ local function ensure_buffer()
   vim.bo[buf].buftype = "nofile" -- never auto-writes; ":w <path>" still works
   vim.bo[buf].bufhidden = "hide" -- survive closing its window
   vim.bo[buf].swapfile = false
+
+  vim.b[buf].copilot_enabled = true
+
   set_buffer_keymaps(buf)
   M.bufnr = buf
   return buf
