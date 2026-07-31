@@ -25,6 +25,8 @@ return {
       -- Prefix code snippets with their file reference (path#L3-L4), which also
       -- lets <Tab>/<CR> navigate/jump to snippets like plain references.
       snippet_include_ref = true,
+      format_ref = require("libs.code_notes").format.link_list,
+      style = "list",
     },
     keys = {
       {

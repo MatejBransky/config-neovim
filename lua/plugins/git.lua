@@ -5,7 +5,7 @@ return {
   {
     "tpope/vim-fugitive",
     config = function()
-      local reference = require("libs.reference")
+      local reference = require("libs.code_notes.reference")
 
       vim.keymap.set(keybindings.references.copyFilepath.mode, keybindings.references.copyFilepath.shortcut, function()
         vim.fn.setreg("*", reference.relative_path())
