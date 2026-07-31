@@ -3,8 +3,16 @@ local keybindings = require("keybindings")
 -- Local "code notes" plugin: a scratch buffer that collects references to file
 -- locations (path#L10 / path#L45-L67) together with free-form notes, so they
 -- can be copied/saved and reused elsewhere (e.g. handed to an AI agent).
--- Implementation lives in lua/libs/code_notes.lua.
+-- Implementation lives in lua/libs/code_notes/.
 return {
+  {
+    "nvim-mini/mini.test",
+    build = false,
+    dependencies = { "nvim-mini/mini.nvim" },
+    config = function()
+      require("mini.test").setup()
+    end,
+  },
   {
     "code-notes",
     dir = vim.fn.stdpath("config"),
