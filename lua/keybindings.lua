@@ -448,6 +448,11 @@ return {
       mode = { "x", "n" },
       shortcut = "<leader>ca",
     },
+    eslintFixAll = {
+      desc = "Fix all ESLint problems",
+      mode = "n",
+      shortcut = "<leader>cu",
+    },
     sourceAction = {
       desc = "Source action",
       mode = "n",

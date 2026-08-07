@@ -4,6 +4,48 @@ return {
   {
     "neovim/nvim-lspconfig",
     init = function()
+      local function fix_all_kind(bufnr)
+        for _, client in ipairs(vim.lsp.get_clients({ bufnr = bufnr })) do
+          if client.name == "eslint" then
+            return "source.fixAll.eslint"
+          elseif client.name == "oxlint" then
+            return "source.fixAll.oxlint"
+          end
+        end
+      end
+
+      local function update_fix_all_keymap(bufnr)
+        local kind = fix_all_kind(bufnr)
+        local shortcut = keybindings.lsp.eslintFixAll.shortcut
+
+        if kind then
+          vim.keymap.set("n", shortcut, function()
+            vim.lsp.buf.code_action({
+              apply = true,
+              context = {
+                diagnostics = {},
+                only = { kind },
+              },
+            })
+          end, {
+            buffer = bufnr,
+            desc = keybindings.lsp.eslintFixAll.desc,
+          })
+        else
+          pcall(vim.keymap.del, "n", shortcut, { buffer = bufnr })
+        end
+      end
+
+      local group = vim.api.nvim_create_augroup("user_lsp_fix_all", { clear = true })
+      vim.api.nvim_create_autocmd({ "LspAttach", "LspDetach" }, {
+        group = group,
+        callback = function(args)
+          vim.schedule(function()
+            update_fix_all_keymap(args.buf)
+          end)
+        end,
+      })
+
       vim.keymap.set(
         keybindings.lsp.log.mode,
         keybindings.lsp.log.shortcut,

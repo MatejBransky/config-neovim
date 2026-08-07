@@ -56,6 +56,96 @@ return {
           layout = "diff3_mixed",
         },
       },
+      keymaps = {
+        view = {
+          {
+            "n",
+            "gf",
+            function()
+              local view = require("diffview.lib").get_current_view()
+              if not view then
+                vim.notify("No diffview open", vim.log.levels.WARN)
+                return
+              end
+
+              local rev = view.left
+              if not rev or not rev.commit then
+                vim.notify("No commit revision found", vim.log.levels.WARN)
+                return
+              end
+
+              local file = view.panel.cur_file
+              if not file then
+                vim.notify("No file selected", vim.log.levels.WARN)
+                return
+              end
+
+              vim.cmd("tabnew")
+              vim.cmd("keepalt Gedit " .. rev.commit .. ":" .. file.path)
+            end,
+            { desc = "Open file at commit revision via fugitive", silent = true },
+          },
+        },
+        file_panel = {
+          {
+            "n",
+            "gf",
+            function()
+              local view = require("diffview.lib").get_current_view()
+              if not view then
+                vim.notify("No diffview open", vim.log.levels.WARN)
+                return
+              end
+
+              local rev = view.left
+              if not rev or not rev.commit then
+                vim.notify("No commit revision found", vim.log.levels.WARN)
+                return
+              end
+
+              local file = view.panel:get_item_at_cursor()
+              if not file or not file.path then
+                vim.notify("No file selected", vim.log.levels.WARN)
+                return
+              end
+
+              vim.cmd("tabnew")
+              vim.cmd("keepalt Gedit " .. rev.commit .. ":" .. file.path)
+            end,
+            { desc = "Open file at commit revision via fugitive", silent = true },
+          },
+        },
+        file_history_panel = {
+          {
+            "n",
+            "gf",
+            function()
+              local view = require("diffview.lib").get_current_view()
+              if not view then
+                vim.notify("No diffview open", vim.log.levels.WARN)
+                return
+              end
+
+              local entry = view.panel:get_log_entry_at_cursor()
+              if not entry or not entry.commit then
+                vim.notify("No commit selected", vim.log.levels.WARN)
+                return
+              end
+
+              local hash = entry.commit.hash
+              local file = entry.files[1]
+              if not hash or not file then
+                vim.notify("Cannot determine commit or file", vim.log.levels.WARN)
+                return
+              end
+
+              vim.cmd("tabnew")
+              vim.cmd("keepalt Gedit " .. hash .. ":" .. file.path)
+            end,
+            { desc = "Open file at selected commit via fugitive", silent = true },
+          },
+        },
+      },
     },
     keys = {
       {
