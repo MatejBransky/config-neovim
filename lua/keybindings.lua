@@ -322,6 +322,21 @@ return {
       mode = "n",
       shortcut = "<leader>oy",
     },
+    save = {
+      desc = "Save code notes for the current project",
+      mode = "n",
+      shortcut = "<leader>os",
+    },
+    load = {
+      desc = "Load code notes for the current project",
+      mode = "n",
+      shortcut = "<leader>ol",
+    },
+    close = {
+      desc = "Close code notes safely",
+      mode = "n",
+      shortcut = "<leader>oq",
+    },
     -- Buffer-local keys, active only inside the code notes buffer.
     jump = {
       desc = "Jump to the reference under the cursor",

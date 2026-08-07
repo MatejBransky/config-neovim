@@ -9,6 +9,10 @@ local M = {}
 
 ---@type integer|nil Buffer number of the persistent notes buffer (nil until first use).
 M.bufnr = nil
+---@type table<string, integer> Buffers keyed by their project root.
+M.buffers = {}
+---@type string|nil Project root currently shown by M.bufnr.
+M.root = nil
 
 ---@alias CodeNotes.Formatter fun(ref: string): string
 
@@ -18,6 +22,7 @@ M.bufnr = nil
 ---@field format_ref? CodeNotes.Formatter|nil Function to format a reference before insertion.
 ---   Place `{cursor}` in the returned string to position the cursor there.
 ---@field style? "block"|"list" Entry layout. "block" = blank lines + separator. "list" = compact lines.
+---@field storage_dir? string Directory for per-project notes files.
 
 ---@type CodeNotes.Config
 M.config = {
@@ -25,6 +30,7 @@ M.config = {
   snippet_include_ref = true,
   format_ref = nil,
   style = "block",
+  storage_dir = vim.fn.stdpath("state") .. "/code-notes",
 }
 
 ---@class CodeNotes.Format
@@ -57,8 +63,6 @@ function M.setup(opts)
   M.config = vim.tbl_deep_extend("force", M.config, opts or {})
 end
 
-local NAME = "code-notes.md"
-
 -- Project root used to resolve the relative references back to absolute paths:
 -- the git top-level of cwd, falling back to cwd itself.
 local function project_root()
@@ -67,6 +71,70 @@ local function project_root()
     return vim.fs.dirname(dot_git)
   end
   return vim.fn.getcwd()
+end
+
+local function notes_path(root)
+  local id = vim.fn.sha256(root)
+  return M.config.storage_dir .. "/" .. id .. ".md"
+end
+
+local function buffer_name(root)
+  local project = vim.fs.basename(root)
+  if project == "" then
+    project = root
+  end
+  return "Code Notes [" .. project .. "]"
+end
+
+-- Whether the buffer already has any real content.
+local function has_content(buf)
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  return #lines > 1 or (lines[1] ~= nil and lines[1] ~= "")
+end
+
+local function read_project_notes(root, buf)
+  local path = notes_path(root)
+  if vim.fn.filereadable(path) == 1 then
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, vim.fn.readfile(path))
+  end
+  vim.bo[buf].modified = false
+end
+
+local function save_buffer(buf, root)
+  vim.fn.mkdir(M.config.storage_dir, "p")
+  local path = notes_path(root)
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  if vim.fn.writefile(lines, path) ~= 0 then
+    vim.notify("Could not save code notes: " .. path, vim.log.levels.ERROR)
+    return false
+  end
+  vim.bo[buf].modified = false
+  vim.notify("Code notes saved for " .. root, vim.log.levels.INFO)
+  return true
+end
+
+-- Ask before losing edits. The native confirm() keeps this usable from close
+-- commands, where an asynchronous UI selector cannot pause the operation.
+local function confirm_discard(buf, root)
+  if not has_content(buf) or not vim.bo[buf].modified then
+    return true
+  end
+
+  local choice = vim.fn.confirm(
+    "Unsaved changes in:\n"
+      .. buffer_name(root)
+      .. "\n\nSave these notes before closing?",
+    "&Save\n&Discard\n&Cancel",
+    1,
+    "Code Notes"
+  )
+  if choice == 1 then
+    return save_buffer(buf, root)
+  elseif choice == 2 then
+    vim.bo[buf].modified = false
+    return true
+  end
+  return false
 end
 
 -- Resolve a relative reference path to a readable absolute path, or nil.
@@ -82,6 +150,16 @@ end
 
 local ref_parser = require("libs.code_notes.ref_parser")
 local ns = vim.api.nvim_create_namespace("code_notes.preview")
+
+-- Range previews are extmarks, not Vim's transient visual mode. Remove them
+-- as soon as the user enters the referenced window so they cannot outlive the
+-- preview or overlap a new visual selection.
+vim.api.nvim_create_autocmd("WinEnter", {
+  group = vim.api.nvim_create_augroup("code_notes_preview", { clear = true }),
+  callback = function(args)
+    vim.api.nvim_buf_clear_namespace(args.buf, ns, 0, -1)
+  end,
+})
 
 -- { line, col } pairs (1-based line, 0-based col) of every reference in the
 -- notes buffer.
@@ -231,26 +309,67 @@ local function set_buffer_keymaps(buf)
   map(keybindings.notes.prev, function()
     M.goto_ref(-1)
   end)
+  vim.keymap.set("n", "q", function()
+    M.close()
+  end, { buffer = buf, silent = true, desc = "Close code notes safely" })
+  vim.keymap.set("n", "<leader>bd", function()
+    M.close()
+  end, { buffer = buf, silent = true, desc = "Close code notes safely" })
+  for _, shortcut in ipairs({ "<C-w>q", "<C-w>c" }) do
+    vim.keymap.set("n", shortcut, function()
+      M.close()
+    end, { buffer = buf, silent = true, desc = "Close code notes safely" })
+  end
 end
 
--- Create the notes buffer once and reuse it afterwards.
-local function ensure_buffer()
-  if M.bufnr and vim.api.nvim_buf_is_valid(M.bufnr) then
-    return M.bufnr
+-- Create one notes buffer per project root and reuse it afterwards.
+local function ensure_buffer(root)
+  local existing = M.buffers[root]
+  if existing and vim.api.nvim_buf_is_valid(existing) then
+    M.bufnr = existing
+    M.root = root
+    return existing
   end
 
   local buf = vim.api.nvim_create_buf(true, false)
-  vim.api.nvim_buf_set_name(buf, NAME)
-  vim.bo[buf].filetype = "markdown"
-  vim.bo[buf].buftype = "nofile" -- never auto-writes; ":w <path>" still works
+  -- Keep the name URI-like so Neovim does not resolve it relative to cwd.
+  vim.api.nvim_buf_set_name(buf, "code-notes://" .. buffer_name(root))
+  -- This is markdown content, but not a real markdown file. A dedicated
+  -- filetype keeps markdown LSP clients (notably Marksman) away from the
+  -- synthetic code-notes:// URI.
+  vim.bo[buf].filetype = "code_notes"
+  vim.bo[buf].syntax = "markdown"
+  vim.bo[buf].buftype = "acwrite" -- track edits without writing the URI name
   vim.bo[buf].bufhidden = "hide" -- survive closing its window
   vim.bo[buf].swapfile = false
 
   vim.b[buf].copilot_enabled = true
 
   set_buffer_keymaps(buf)
+  vim.api.nvim_create_autocmd("BufWriteCmd", {
+    buffer = buf,
+    callback = function()
+      save_buffer(buf, root)
+    end,
+  })
+  read_project_notes(root, buf)
+  vim.b[buf].code_notes_root = root
+  vim.b[buf].code_notes_path = notes_path(root)
+  M.buffers[root] = buf
   M.bufnr = buf
+  M.root = root
   return buf
+end
+
+-- Switch the active notes buffer, preserving edits in the previous project.
+local function ensure_current_project()
+  local root = project_root()
+  if M.root and M.root ~= root and M.bufnr and vim.api.nvim_buf_is_valid(M.bufnr) then
+    if not confirm_discard(M.bufnr, M.root) then
+      return nil
+    end
+  end
+  return ensure_buffer(root)
 end
 
 -- Return a window already showing the notes buffer, or open one in a vertical
@@ -266,22 +385,20 @@ local function get_or_open_window(buf)
   local win = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_buf(win, buf)
   vim.api.nvim_win_set_config(win, { width = math.max(40, math.floor(vim.o.columns * 0.35)) })
+  vim.wo[win].spell = false
   vim.wo[win].number = false
   vim.wo[win].relativenumber = false
   vim.wo[win].wrap = true
   return win
 end
 
--- Whether the buffer already has any real content.
-local function has_content(buf)
-  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-  return #lines > 1 or (lines[1] ~= nil and lines[1] ~= "")
-end
-
 -- Insert lines into the notes buffer and position the cursor at the first
 -- `{cursor}` marker (removing it), or on the last line in insert mode.
 local function append_lines(lines)
-  local buf = ensure_buffer()
+  local buf = ensure_current_project()
+  if not buf then
+    return
+  end
   local win = get_or_open_window(buf)
 
   -- Scan for {cursor} marker before inserting
@@ -417,26 +534,65 @@ end
 
 --- Open/focus the notes window without adding an entry.
 function M.open()
-  local buf = ensure_buffer()
+  local buf = ensure_current_project()
+  if not buf then
+    return
+  end
   local win = get_or_open_window(buf)
   vim.api.nvim_set_current_win(win)
 end
 
+--- Save notes for the current project.
+function M.save()
+  local buf = ensure_current_project()
+  if buf then
+    save_buffer(buf, M.root)
+  end
+end
+
+--- Reload notes for the current project from disk.
+function M.load()
+  local buf = ensure_current_project()
+  if not buf or not confirm_discard(buf, M.root) then
+    return
+  end
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, {})
+  read_project_notes(M.root, buf)
+  vim.notify("Code notes loaded for " .. M.root, vim.log.levels.INFO)
+end
+
+--- Close the current notes window without silently losing edits.
+function M.close()
+  local buf = M.bufnr
+  if not (buf and vim.api.nvim_buf_is_valid(buf)) then
+    return
+  end
+  if not confirm_discard(buf, M.root) then
+    return
+  end
+  local win = vim.api.nvim_get_current_win()
+  if vim.api.nvim_win_get_buf(win) == buf then
+    vim.api.nvim_win_close(win, false)
+  end
+end
+
 --- Copy the whole notes buffer to the system clipboard.
 function M.copy()
-  if not (M.bufnr and vim.api.nvim_buf_is_valid(M.bufnr)) then
+  local buf = ensure_current_project()
+  if not buf or not has_content(buf) then
     vim.notify("No code notes yet", vim.log.levels.WARN)
     return
   end
-  local lines = vim.api.nvim_buf_get_lines(M.bufnr, 0, -1, false)
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
   vim.fn.setreg("+", table.concat(lines, "\n"))
   vim.notify(string.format("Copied %d lines of notes", #lines), vim.log.levels.INFO)
 end
 
 --- Clear all notes.
 function M.clear()
-  if M.bufnr and vim.api.nvim_buf_is_valid(M.bufnr) then
-    vim.api.nvim_buf_set_lines(M.bufnr, 0, -1, false, {})
+  local buf = ensure_current_project()
+  if buf and confirm_discard(buf, M.root) then
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, {})
     vim.notify("Code notes cleared", vim.log.levels.INFO)
   end
 end

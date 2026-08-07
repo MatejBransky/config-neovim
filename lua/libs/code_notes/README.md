@@ -6,6 +6,8 @@ Scratch buffer plugin for collecting file references and notes. Useful for keepi
 
 A persistent markdown buffer (`code-notes.md`) opens in a vertical split on the right. Each entry consists of a file reference followed by a free-form note. References are clickable — jump to the source with `<CR>`, cycle between them with `<Tab>`/`<S-Tab>`.
 
+Notes are stored separately for each git worktree. Outside a git repository, the current working directory is used. Files are kept under `stdpath("state")/code-notes`, so notes do not modify the project itself.
+
 ### Reference formats
 
 References can appear inline in text, wrapped in backticks, or as markdown links:
@@ -25,6 +27,9 @@ References are resolved relative to the git root (or cwd if not in a repo).
 | Command | Description |
 |---------|-------------|
 | `:CodeNotesClear` | Clear all notes |
+| `:CodeNotesSave` | Save notes for the current project |
+| `:CodeNotesLoad` | Reload notes for the current project |
+| `:CodeNotesClose` | Close the notes window with a save/discard confirmation |
 
 ## Keymaps
 
@@ -37,6 +42,9 @@ References are resolved relative to the git root (or cwd if not in a repo).
 | `<leader>oc` | n, v | Add line/selection as a code snippet |
 | `<leader>oN` | n | Open/focus the notes window |
 | `<leader>oy` | n | Copy all notes to clipboard |
+| `<leader>os` | n | Save notes for the current project |
+| `<leader>ol` | n | Load notes for the current project |
+| `<leader>oq` | n | Close notes safely |
 
 ### Buffer-local (inside the notes buffer)
 
@@ -60,6 +68,7 @@ require("mini.test").setup() -- or through lazy.nvim opts
 | `snippet_include_ref` | boolean | `true` | Prefix code snippets with their file reference (`path#L3-L4`). |
 | `format_ref` | function\|nil | `nil` | Formats reference before insertion. Place `{cursor}` for cursor position. |
 | `style` | `"block"` \| `"list"` | `"block"` | `"block"` = blank lines + separator. `"list"` = compact lines, no separators. |
+| `storage_dir` | string | `stdpath("state") .. "/code-notes"` | Directory for per-project note files. |
 
 ### Style: block vs list
 

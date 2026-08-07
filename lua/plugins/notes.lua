@@ -69,13 +69,46 @@ return {
         mode = keybindings.notes.copy.mode,
         desc = keybindings.notes.copy.desc,
       },
+      {
+        keybindings.notes.save.shortcut,
+        function()
+          require("libs.code_notes").save()
+        end,
+        mode = keybindings.notes.save.mode,
+        desc = keybindings.notes.save.desc,
+      },
+      {
+        keybindings.notes.load.shortcut,
+        function()
+          require("libs.code_notes").load()
+        end,
+        mode = keybindings.notes.load.mode,
+        desc = keybindings.notes.load.desc,
+      },
+      {
+        keybindings.notes.close.shortcut,
+        function()
+          require("libs.code_notes").close()
+        end,
+        mode = keybindings.notes.close.mode,
+        desc = keybindings.notes.close.desc,
+      },
     },
-    cmd = { "CodeNotesClear" },
+    cmd = { "CodeNotesClear", "CodeNotesSave", "CodeNotesLoad", "CodeNotesClose" },
     config = function(_, opts)
       require("libs.code_notes").setup(opts)
       vim.api.nvim_create_user_command("CodeNotesClear", function()
         require("libs.code_notes").clear()
       end, { desc = "Clear the code notes buffer" })
+      vim.api.nvim_create_user_command("CodeNotesSave", function()
+        require("libs.code_notes").save()
+      end, { desc = "Save code notes for the current project" })
+      vim.api.nvim_create_user_command("CodeNotesLoad", function()
+        require("libs.code_notes").load()
+      end, { desc = "Load code notes for the current project" })
+      vim.api.nvim_create_user_command("CodeNotesClose", function()
+        require("libs.code_notes").close()
+      end, { desc = "Close code notes safely" })
     end,
   },
 }
